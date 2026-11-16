@@ -2,13 +2,17 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   BellRing,
   ClipboardList,
+  Eye,
   Flame,
   GitBranch,
+  Image as ImageIcon,
   LogOut,
+  MapPin,
   MessageSquare,
   PlusCircle,
   QrCode,
   Settings,
+  X,
 } from 'lucide-react';
 import type {
   Complaint,
@@ -34,6 +38,7 @@ import { ProblemCategoriesManager } from './components/ProblemCategoriesManager'
 import { QrConfiguratorView } from './components/QrConfiguratorView';
 import { GuestQrPortalModal } from './components/GuestQrPortalModal';
 import { NotificationAndLoginConfigModal } from './components/NotificationAndLoginConfigModal';
+import { IncidentDetailModal } from './components/IncidentDetailModal';
 
 type NavTab =
   | 'map_heatmap'
@@ -55,11 +60,20 @@ export function App() {
   const [currentUser, setCurrentUser] = useState<StaffManager | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>('map_heatmap');
 
+  // Modals & Popups
   const [guestModalOpen, setGuestModalOpen] = useState<boolean>(false);
   const [guestModalLocation, setGuestModalLocation] = useState<LocationZone | null>(
     null
   );
   const [configModalOpen, setConfigModalOpen] = useState<boolean>(false);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+
+  // Interactive Web Popup Notification when a new incident is placed
+  const [webIncidentPopup, setWebIncidentPopup] = useState<{
+    complaint: Complaint;
+    smsPreview?: string;
+  } | null>(null);
+
   const [liveToast, setLiveToast] = useState<{
     title: string;
     subtitle: string;
@@ -101,6 +115,30 @@ export function App() {
     setLoading(false);
   }, []);
 
+  const triggerWebBrowserNotification = useCallback(
+    (newComplaint: Complaint) => {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          const notif = new Notification(
+            `New Hotel Incident: ${newComplaint.ticket_number} (Room ${newComplaint.room_number})`,
+            {
+              body: `${newComplaint.specific_issue} — Click to open incident & view image.`,
+              icon: newComplaint.image_url || settings.hotel_logo_url,
+            }
+          );
+          notif.onclick = () => {
+            window.focus();
+            setSelectedIncidentId(newComplaint.id);
+            notif.close();
+          };
+        } else if (Notification.permission === 'default') {
+          Notification.requestPermission();
+        }
+      }
+    },
+    [settings.hotel_logo_url]
+  );
+
   useEffect(() => {
     fetchAllData();
 
@@ -108,7 +146,21 @@ export function App() {
       .channel('tangerine-ccms-live')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'complaints' },
+        { event: 'INSERT', schema: 'public', table: 'complaints' },
+        (payload) => {
+          const inserted = payload.new as Complaint;
+          fetchAllData();
+          if (inserted && inserted.id) {
+            setWebIncidentPopup({
+              complaint: inserted,
+            });
+            triggerWebBrowserNotification(inserted);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'complaints' },
         () => {
           fetchAllData();
         }
@@ -125,7 +177,7 @@ export function App() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchAllData]);
+  }, [fetchAllData, triggerWebBrowserNotification]);
 
   useEffect(() => {
     if (locations.length === 0) return;
@@ -149,7 +201,7 @@ export function App() {
     setLiveToast(toast);
     setTimeout(() => {
       setLiveToast((current) => (current === toast ? null : current));
-    }, 6000);
+    }, 5500);
   };
 
   const handleUpdateComplaintStatus = async (
@@ -221,6 +273,19 @@ export function App() {
     (c) => c.status !== 'resolved' && c.status !== 'rejected'
   ).length;
 
+  const selectedIncident =
+    complaints.find((c) => c.id === selectedIncidentId) ||
+    (webIncidentPopup && webIncidentPopup.complaint.id === selectedIncidentId
+      ? webIncidentPopup.complaint
+      : null);
+
+  const popupLocation = webIncidentPopup
+    ? locations.find((l) => l.id === webIncidentPopup.complaint.location_id)
+    : null;
+  const popupManager = webIncidentPopup
+    ? managers.find((m) => m.id === webIncidentPopup.complaint.assigned_manager_id)
+    : null;
+
   return (
     <>
       {!currentUser ? (
@@ -229,13 +294,11 @@ export function App() {
           settings={settings}
           onLogin={(mgr) => {
             setCurrentUser(mgr);
-            showNotificationToast({
-              title: `Signed in as ${mgr.full_name}`,
-              subtitle:
-                mgr.receive_all_complaints || mgr.role === 'super_manager'
-                  ? 'Super Manager Mode: Viewing all complaints across the hotel.'
-                  : `Dedicated Manager Mode: ${mgr.department}`,
-            });
+            if (typeof window !== 'undefined' && 'Notification' in window) {
+              if (Notification.permission === 'default') {
+                Notification.requestPermission();
+              }
+            }
           }}
           onOpenGuestPortal={() => {
             setGuestModalLocation(locations.find((l) => l.code === 'BLK-04') || locations[0]);
@@ -247,7 +310,7 @@ export function App() {
         <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
           {/* Shift Notice Banner */}
           {settings.show_login_notification_banner && settings.login_banner_message && (
-            <div className="bg-slate-900 text-white px-4 py-1.5 text-xs font-medium flex items-center justify-center gap-2">
+            <div className="bg-slate-950 text-slate-200 border-b border-slate-800 px-4 py-1.5 text-xs font-medium flex items-center justify-center gap-2">
               <BellRing className="w-3.5 h-3.5 text-orange-400 shrink-0" />
               <span>
                 <strong>NOTICE:</strong> {settings.login_banner_message}
@@ -328,17 +391,17 @@ export function App() {
             </div>
 
             {/* Navigation Tabs */}
-            <div className="max-w-[1440px] mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto border-t border-slate-200 bg-slate-50">
+            <div className="max-w-[1440px] mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto border-t border-slate-800 bg-slate-950 text-slate-300">
               <button
                 type="button"
                 onClick={() => setActiveTab('map_heatmap')}
                 className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition ${
                   activeTab === 'map_heatmap'
-                    ? 'border-slate-900 text-slate-900 bg-white'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                    ? 'border-orange-500 text-white bg-slate-900'
+                    : 'border-transparent text-slate-400 hover:text-white'
                 }`}
               >
-                <Flame className="w-4 h-4 text-orange-600" />
+                <Flame className="w-4 h-4 text-orange-500" />
                 <span>2D Hotel Map &amp; Heatmap</span>
               </button>
 
@@ -347,13 +410,13 @@ export function App() {
                 onClick={() => setActiveTab('complaints_queue')}
                 className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition ${
                   activeTab === 'complaints_queue'
-                    ? 'border-slate-900 text-slate-900 bg-white'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                    ? 'border-orange-500 text-white bg-slate-900'
+                    : 'border-transparent text-slate-400 hover:text-white'
                 }`}
               >
                 <ClipboardList className="w-4 h-4" />
                 <span>Complaints Queue</span>
-                <span className="px-2 py-0.5 rounded text-[10px] bg-red-100 text-red-800 font-bold">
+                <span className="px-2 py-0.5 rounded text-[10px] bg-red-600 text-white font-bold">
                   {activeUnresolvedCount} Open
                 </span>
               </button>
@@ -363,8 +426,8 @@ export function App() {
                 onClick={() => setActiveTab('visual_rules')}
                 className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition ${
                   activeTab === 'visual_rules'
-                    ? 'border-slate-900 text-slate-900 bg-white'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                    ? 'border-orange-500 text-white bg-slate-900'
+                    : 'border-transparent text-slate-400 hover:text-white'
                 }`}
               >
                 <GitBranch className="w-4 h-4" />
@@ -376,8 +439,8 @@ export function App() {
                 onClick={() => setActiveTab('problem_builder')}
                 className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition ${
                   activeTab === 'problem_builder'
-                    ? 'border-slate-900 text-slate-900 bg-white'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                    ? 'border-orange-500 text-white bg-slate-900'
+                    : 'border-transparent text-slate-400 hover:text-white'
                 }`}
               >
                 <PlusCircle className="w-4 h-4" />
@@ -389,8 +452,8 @@ export function App() {
                 onClick={() => setActiveTab('qr_configurator')}
                 className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 whitespace-nowrap transition ${
                   activeTab === 'qr_configurator'
-                    ? 'border-slate-900 text-slate-900 bg-white'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                    ? 'border-orange-500 text-white bg-slate-900'
+                    : 'border-transparent text-slate-400 hover:text-white'
                 }`}
               >
                 <QrCode className="w-4 h-4" />
@@ -415,6 +478,7 @@ export function App() {
                   setGuestModalLocation(loc);
                   setGuestModalOpen(true);
                 }}
+                onSelectComplaint={(c) => setSelectedIncidentId(c.id)}
                 onRefreshData={fetchAllData}
               />
             )}
@@ -427,6 +491,7 @@ export function App() {
                 managers={managers}
                 currentUser={currentUser}
                 onUpdateStatus={handleUpdateComplaintStatus}
+                onSelectComplaint={(c) => setSelectedIncidentId(c.id)}
                 onRefresh={fetchAllData}
               />
             )}
@@ -464,9 +529,81 @@ export function App() {
         </div>
       )}
 
-      {/* Notification Toast */}
+      {/* WEB POPUP NOTIFICATION WHEN NEW INCIDENT IS PLACED (CLICK TO OPEN & VIEW IMAGE) */}
+      {webIncidentPopup && (
+        <div className="fixed top-5 right-5 z-50 max-w-md w-full bg-white text-slate-900 rounded-xl shadow-2xl border-2 border-slate-900 overflow-hidden">
+          <div className="bg-red-600 text-white px-4 py-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase">
+              <BellRing className="w-4 h-4" />
+              <span>New Incident Alert — Click to Open &amp; View Image</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWebIncidentPopup(null)}
+              className="p-1 rounded hover:bg-red-700 text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div
+            onClick={() => {
+              setSelectedIncidentId(webIncidentPopup.complaint.id);
+              setWebIncidentPopup(null);
+            }}
+            className="p-4 cursor-pointer hover:bg-slate-50 transition space-y-3"
+          >
+            <div className="flex items-start gap-3">
+              {webIncidentPopup.complaint.image_url ? (
+                <img
+                  src={webIncidentPopup.complaint.image_url}
+                  alt="Incident preview"
+                  className="w-20 h-20 rounded-lg object-cover border border-slate-300 shrink-0"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                  <ImageIcon className="w-6 h-6" />
+                </div>
+              )}
+
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-white">
+                    {webIncidentPopup.complaint.ticket_number}
+                  </span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-900">
+                    Room {webIncidentPopup.complaint.room_number}
+                  </span>
+                </div>
+                <div className="text-sm font-bold text-slate-900 truncate">
+                  {webIncidentPopup.complaint.specific_issue}
+                </div>
+                <div className="text-xs text-slate-600 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+                  <span className="truncate">
+                    {popupLocation?.name || 'Hotel Location'} ({popupLocation?.code})
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Assigned: <strong>{popupManager?.full_name || 'Department Manager'}</strong>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Open Incident &amp; View Uploaded Image</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* General Status Update Toast */}
       {liveToast && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-md w-full bg-slate-900 text-white rounded-xl p-4 shadow-xl border border-slate-700 space-y-2">
+        <div className="fixed bottom-5 right-5 z-40 max-w-md w-full bg-slate-900 text-white rounded-xl p-4 shadow-xl border border-slate-700 space-y-2">
           <div className="flex items-start justify-between gap-2">
             <div className="font-bold text-sm text-white">{liveToast.title}</div>
             <button
@@ -490,6 +627,18 @@ export function App() {
         </div>
       )}
 
+      {/* Incident Detail & Full Image Viewer Modal */}
+      <IncidentDetailModal
+        complaint={selectedIncident || null}
+        onClose={() => setSelectedIncidentId(null)}
+        locations={locations}
+        categories={categories}
+        managers={managers}
+        currentUser={currentUser}
+        onUpdateStatus={handleUpdateComplaintStatus}
+        onRefresh={fetchAllData}
+      />
+
       <GuestQrPortalModal
         isOpen={guestModalOpen}
         onClose={() => setGuestModalOpen(false)}
@@ -501,13 +650,12 @@ export function App() {
         settings={settings}
         onComplaintSubmitted={(createdComplaint, smsText) => {
           fetchAllData();
-          const loc = locations.find((l) => l.id === createdComplaint.location_id);
-          const mgr = managers.find((m) => m.id === createdComplaint.assigned_manager_id);
-          showNotificationToast({
-            title: `New Complaint: ${createdComplaint.ticket_number} (${loc?.code} • Room ${createdComplaint.room_number})`,
-            subtitle: `Routed to ${mgr?.full_name || 'Department Manager'} + Super Manager notified.`,
+          setGuestModalOpen(false);
+          setWebIncidentPopup({
+            complaint: createdComplaint,
             smsPreview: smsText,
           });
+          triggerWebBrowserNotification(createdComplaint);
         }}
       />
 

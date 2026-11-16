@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Clock,
+  Eye,
   Image as ImageIcon,
   MapPin,
   MessageSquare,
@@ -27,6 +28,7 @@ interface ComplaintsQueueViewProps {
     newStatus: ComplaintStatus,
     notes?: string
   ) => Promise<void>;
+  onSelectComplaint: (complaint: Complaint) => void;
   onRefresh: () => void;
 }
 
@@ -37,6 +39,7 @@ export const ComplaintsQueueView: React.FC<ComplaintsQueueViewProps> = ({
   managers,
   currentUser,
   onUpdateStatus,
+  onSelectComplaint,
   onRefresh,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -146,17 +149,20 @@ export const ComplaintsQueueView: React.FC<ComplaintsQueueViewProps> = ({
           return (
             <div
               key={c.id}
-              className="bg-white rounded-xl p-5 border border-slate-200"
+              className="bg-white rounded-xl p-5 border border-slate-200 hover:border-slate-400 transition"
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="flex items-start gap-3.5 max-w-2xl">
+                <div
+                  onClick={() => onSelectComplaint(c)}
+                  className="flex items-start gap-3.5 max-w-2xl cursor-pointer flex-1"
+                >
                   <div
                     className="w-10 h-10 rounded-lg flex items-center justify-center text-white shrink-0 mt-0.5"
                     style={{ backgroundColor: cat?.color || '#ea580c' }}
                   >
                     <CategoryIcon name={cat?.icon || 'Bug'} className="w-5 h-5" />
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-900 text-white">
                         {c.ticket_number}
@@ -170,14 +176,12 @@ export const ComplaintsQueueView: React.FC<ComplaintsQueueViewProps> = ({
                       </span>
                     </div>
 
-                    <h4 className="text-sm font-bold text-slate-900 pt-0.5">
+                    <h4 className="text-sm font-bold text-slate-900 pt-0.5 hover:text-orange-600">
                       {c.specific_issue}
                     </h4>
 
                     {c.description && (
-                      <p className="text-xs text-slate-600">
-                        {c.description}
-                      </p>
+                      <p className="text-xs text-slate-600">{c.description}</p>
                     )}
 
                     <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-500">
@@ -197,6 +201,19 @@ export const ComplaintsQueueView: React.FC<ComplaintsQueueViewProps> = ({
                       )}
                     </div>
                   </div>
+
+                  {c.image_url && (
+                    <div className="w-24 h-20 rounded-lg overflow-hidden border border-slate-200 shrink-0 relative group">
+                      <img
+                        src={c.image_url}
+                        alt="Thumbnail"
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold">
+                        View Photo
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-col items-end gap-2">
@@ -232,18 +249,18 @@ export const ComplaintsQueueView: React.FC<ComplaintsQueueViewProps> = ({
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  {c.image_url && (
-                    <a
-                      href={c.image_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-100 text-slate-800 border border-slate-300 text-xs font-semibold hover:bg-slate-200"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      <span>View Uploaded Photo</span>
-                    </a>
-                  )}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => onSelectComplaint(c)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>
+                      {c.image_url ? 'Open Incident & View Photo' : 'Open Incident Details'}
+                    </span>
+                  </button>
+
                   {c.verification_notes && (
                     <span className="text-xs text-blue-800 bg-blue-50 px-2.5 py-1 rounded border border-blue-200">
                       <strong>Verification:</strong> {c.verification_notes}

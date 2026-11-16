@@ -37,6 +37,7 @@ interface HotelMap2DViewProps {
     notes?: string
   ) => Promise<void>;
   onOpenQrForLocation: (location: LocationZone) => void;
+  onSelectComplaint: (complaint: Complaint) => void;
   onRefreshData: () => void;
 }
 
@@ -163,6 +164,7 @@ export const HotelMap2DView: React.FC<HotelMap2DViewProps> = ({
   currentUser,
   onUpdateComplaintStatus,
   onOpenQrForLocation,
+  onSelectComplaint,
   onRefreshData,
 }) => {
   const [visualMode, setVisualMode] = useState<VisualMode>('heatmap');
@@ -743,71 +745,77 @@ export const HotelMap2DView: React.FC<HotelMap2DViewProps> = ({
                       const assignedMgr = managers.find((m) => m.id === c.assigned_manager_id);
 
                       return (
-                        <div key={c.id} className="pt-3 first:pt-0 space-y-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
-                                style={{ backgroundColor: cat?.color || '#ea580c' }}
-                              >
-                                <CategoryIcon name={cat?.icon || 'Bug'} className="w-4 h-4" />
-                              </span>
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-bold text-slate-900">
-                                    {c.ticket_number}
-                                  </span>
-                                  <span className="text-xs font-semibold text-orange-700 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
-                                    Room {c.room_number}
-                                  </span>
-                                </div>
-                                <div className="text-xs font-semibold text-slate-800 mt-0.5">
-                                  {c.specific_issue}
+                        <div
+                          key={c.id}
+                          className="pt-3 first:pt-0 space-y-2"
+                        >
+                          <div
+                            onClick={() => onSelectComplaint(c)}
+                            className="p-2.5 -mx-1 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200 cursor-pointer transition space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
+                                  style={{ backgroundColor: cat?.color || '#ea580c' }}
+                                >
+                                  <CategoryIcon name={cat?.icon || 'Bug'} className="w-4 h-4" />
+                                </span>
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-bold text-slate-900 underline">
+                                      {c.ticket_number}
+                                    </span>
+                                    <span className="text-xs font-semibold text-orange-700 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                                      Room {c.room_number}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs font-semibold text-slate-800 mt-0.5">
+                                    {c.specific_issue}
+                                  </div>
                                 </div>
                               </div>
+
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                  c.status === 'resolved'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : c.status === 'in_progress'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : c.status === 'verified'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}
+                              >
+                                {c.status.replace('_', ' ')}
+                              </span>
                             </div>
 
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                c.status === 'resolved'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : c.status === 'in_progress'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : c.status === 'verified'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}
-                            >
-                              {c.status.replace('_', ' ')}
-                            </span>
-                          </div>
+                            {c.description && (
+                              <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                {c.description}
+                              </p>
+                            )}
 
-                          {c.description && (
-                            <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                              {c.description}
-                            </p>
-                          )}
+                            {c.image_url && (
+                              <div className="relative rounded-lg overflow-hidden border border-slate-200 max-h-36 group">
+                                <img
+                                  src={c.image_url}
+                                  alt="Evidence"
+                                  className="w-full h-32 object-cover"
+                                />
+                                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition">
+                                  Click to View Full Image
+                                </div>
+                              </div>
+                            )}
 
-                          {c.image_url && (
-                            <div className="rounded-lg overflow-hidden border border-slate-200 max-h-36">
-                              <img
-                                src={c.image_url}
-                                alt="Evidence"
-                                className="w-full h-32 object-cover"
-                              />
-                            </div>
-                          )}
-
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-                            <span>
-                              Guest: <strong className="text-slate-700">{c.guest_name}</strong>
-                            </span>
-                            <span>
-                              Manager:{' '}
-                              <strong className="text-slate-700">
+                            <div className="flex items-center justify-between text-[11px] text-blue-600 font-semibold pt-0.5">
+                              <span>Click to open incident &amp; view image →</span>
+                              <span className="text-slate-500 font-normal">
                                 {assignedMgr?.full_name || 'Unassigned'}
-                              </strong>
-                            </span>
+                              </span>
+                            </div>
                           </div>
 
                           {c.status !== 'resolved' && (
